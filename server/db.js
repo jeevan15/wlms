@@ -1,7 +1,11 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 
-const db = new DatabaseSync(path.join(__dirname, 'lms.db'));
+// In production on Render, use the persistent disk mount. Locally use the server folder.
+const dbPath = process.env.NODE_ENV === 'production'
+  ? '/var/data/lms.db'
+  : path.join(__dirname, 'lms.db');
+const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
