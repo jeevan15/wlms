@@ -14,6 +14,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use('/api/auth',          require('./routes/auth'));
+app.use('/api/profile',       require('./routes/profile'));
 app.use('/api/courses',       require('./routes/courses'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));

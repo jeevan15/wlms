@@ -116,17 +116,21 @@ router.post('/:courseId/lessons/:lessonId/complete', authenticateToken, (req, re
   ).get(req.params.lessonId, req.params.courseId);
   if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
 
+  const time_spent_seconds = Math.max(0, parseInt(req.body.time_spent_seconds) || 0);
+
   db.prepare(`
-    INSERT INTO user_progress (user_id, lesson_id, completed, completed_at)
-    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
-    ON CONFLICT(user_id, lesson_id) DO UPDATE SET completed = 1, completed_at = CURRENT_TIMESTAMP
-  `).run(req.user.id, lesson.id);
+    INSERT INTO user_progress (user_id, lesson_id, completed, completed_at, time_spent_seconds)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP, ?)
+    ON CONFLICT(user_id, lesson_id) DO UPDATE SET
+      completed = 1, completed_at = CURRENT_TIMESTAMP,
+      time_spent_seconds = MAX(user_progress.time_spent_seconds, excluded.time_spent_seconds)
+  `).run(req.user.id, lesson.id, time_spent_seconds);
 
   res.json({ success: true });
 });
 
 router.post('/:courseId/lessons/:lessonId/quiz', authenticateToken, (req, res) => {
-  const { answers } = req.body;
+  const { answers, time_spent_seconds: rawTime } = req.body;
   const lesson = db.prepare(
     'SELECT id FROM lessons WHERE id = ? AND course_id = ? AND has_quiz = 1'
   ).get(req.params.lessonId, req.params.courseId);
@@ -145,19 +149,22 @@ router.post('/:courseId/lessons/:lessonId/quiz', authenticateToken, (req, res) =
 
   const total = questions.length;
   const passed = total > 0 && score / total >= 0.7;
+  const time_spent_seconds = Math.max(0, parseInt(rawTime) || 0);
 
   db.prepare('INSERT INTO quiz_attempts (user_id, lesson_id, score, total, passed) VALUES (?, ?, ?, ?, ?)')
     .run(req.user.id, lesson.id, score, total, passed ? 1 : 0);
 
   if (passed) {
     db.prepare(`
-      INSERT INTO user_progress (user_id, lesson_id, completed, completed_at)
-      VALUES (?, ?, 1, CURRENT_TIMESTAMP)
-      ON CONFLICT(user_id, lesson_id) DO UPDATE SET completed = 1, completed_at = CURRENT_TIMESTAMP
-    `).run(req.user.id, lesson.id);
+      INSERT INTO user_progress (user_id, lesson_id, completed, completed_at, time_spent_seconds)
+      VALUES (?, ?, 1, CURRENT_TIMESTAMP, ?)
+      ON CONFLICT(user_id, lesson_id) DO UPDATE SET
+        completed = 1, completed_at = CURRENT_TIMESTAMP,
+        time_spent_seconds = MAX(user_progress.time_spent_seconds, excluded.time_spent_seconds)
+    `).run(req.user.id, lesson.id, time_spent_seconds);
   }
 
-  res.json({ score, total, passed, results });
+  res.json({ score, total, passed, results, time_spent_seconds });
 });
 
 module.exports = router;

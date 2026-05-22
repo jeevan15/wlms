@@ -3,16 +3,17 @@ const router = express.Router();
 const db = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
-// GET /api/tasks  — tasks assigned to me (or assigned to my role, or all for admin)
+// GET /api/tasks  — tasks assigned to me (or assigned to my role); all tasks for admin
 router.get('/', authenticateToken, (req, res) => {
   try {
     const { status, priority } = req.query;
+    const isAdmin = req.user.role === 'admin';
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
 
-    let where = 'WHERE (t.assigned_to = ? OR t.assigned_role_id = ?)';
-    const params = [req.user.id, user.job_role_id || -1];
+    let where = isAdmin ? 'WHERE 1=1' : 'WHERE (t.assigned_to = ? OR t.assigned_role_id = ?)';
+    const params = isAdmin ? [] : [req.user.id, user.job_role_id || -1];
 
-    if (status) { where += ' AND t.status = ?'; params.push(status); }
+    if (status)   { where += ' AND t.status = ?';   params.push(status); }
     if (priority) { where += ' AND t.priority = ?'; params.push(priority); }
 
     const tasks = db.prepare(`

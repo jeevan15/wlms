@@ -51,7 +51,10 @@ function calcProgress(userId, jobRoleId) {
     : completedLessons === 0 ? 'not_started'
     : completedLessons < totalLessons ? 'in_progress'
     : 'completed';
-  return { totalLessons, completedLessons, percent, status, courseProgress };
+  const totalTimeSeconds = db.prepare(
+    'SELECT COALESCE(SUM(time_spent_seconds), 0) as t FROM user_progress WHERE user_id = ?'
+  ).get(userId).t;
+  return { totalLessons, completedLessons, percent, status, courseProgress, totalTimeSeconds };
 }
 
 function safeUser(user) {
@@ -206,17 +209,35 @@ router.get('/users', (req, res) => {
 });
 
 router.post('/users', (req, res) => {
-  const { name, email, password, department, job_role_id, role } = req.body;
+  const {
+    title, given_name, last_name, employee_code, employee_type,
+    email, password, department, job_role_id, role, employment_contract
+  } = req.body;
+
+  const name = [given_name, last_name].filter(Boolean).join(' ').trim() || req.body.name || '';
   if (!name || !email || !password)
-    return res.status(400).json({ error: 'Name, email, and password are required' });
+    return res.status(400).json({ error: 'Given name, last name, email and password are required' });
 
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(email))
     return res.status(409).json({ error: 'Email already in use' });
 
+  if (employee_code && db.prepare('SELECT id FROM users WHERE employee_code = ?').get(employee_code))
+    return res.status(409).json({ error: 'Employee ID already in use' });
+
+  // New employees must complete onboarding (TFN/bank/super) on first login
+  const onboarding_completed = (employee_type === 'new') ? 0 : 1;
   const hash = bcrypt.hashSync(password, 10);
-  const newId = db.prepare(
-    'INSERT INTO users (name, email, password, department, job_role_id, role) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name, email, hash, department || null, job_role_id || null, role || 'user').lastInsertRowid;
+  const newId = db.prepare(`
+    INSERT INTO users
+      (name, title, given_name, last_name, employee_code, employee_type,
+       email, password, department, job_role_id, role,
+       employment_contract, onboarding_completed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    name, title || null, given_name || null, last_name || null, employee_code || null, employee_type || 'existing',
+    email, hash, department || null, job_role_id || null, role || 'user',
+    employment_contract || null, onboarding_completed
+  ).lastInsertRowid;
 
   const courses = getAssignedCourses(job_role_id);
   db.prepare('INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, ?)').run(
@@ -234,7 +255,10 @@ router.post('/users', (req, res) => {
 
 router.put('/users/:id', (req, res) => {
   const userId = parseInt(req.params.id);
-  const { name, email, password, department, job_role_id, role } = req.body;
+  const {
+    title, given_name, last_name, employee_code, employee_type,
+    email, password, department, job_role_id, role, employment_contract
+  } = req.body;
 
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!existing) return res.status(404).json({ error: 'User not found' });
@@ -242,12 +266,25 @@ router.put('/users/:id', (req, res) => {
   if (db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, userId))
     return res.status(409).json({ error: 'Email already in use' });
 
+  if (employee_code && db.prepare('SELECT id FROM users WHERE employee_code = ? AND id != ?').get(employee_code, userId))
+    return res.status(409).json({ error: 'Employee ID already in use' });
+
+  const name = [given_name, last_name].filter(Boolean).join(' ').trim() || req.body.name || existing.name;
   const hash = (password && password.trim()) ? bcrypt.hashSync(password, 10) : existing.password;
   const roleChanged = existing.job_role_id !== (job_role_id || null);
 
-  db.prepare(
-    'UPDATE users SET name=?, email=?, password=?, department=?, job_role_id=?, role=? WHERE id=?'
-  ).run(name, email, hash, department || null, job_role_id || null, role || 'user', userId);
+  db.prepare(`
+    UPDATE users SET
+      name=?, title=?, given_name=?, last_name=?, employee_code=?, employee_type=?,
+      email=?, password=?, department=?, job_role_id=?, role=?,
+      employment_contract=?
+    WHERE id=?
+  `).run(
+    name, title || null, given_name || null, last_name || null, employee_code || null, employee_type || 'existing',
+    email, hash, department || null, job_role_id || null, role || 'user',
+    employment_contract || null,
+    userId
+  );
 
   if (roleChanged) {
     const courses = getAssignedCourses(job_role_id);
@@ -281,11 +318,22 @@ router.delete('/users/:id', (req, res) => {
 
 // ─── Job Roles CRUD ───────────────────────────────────────────────────────────
 
+// Hardcoded name → department map used as a guaranteed fallback
+// so the department is always present in the API response even on old DBs
+const ROLE_DEPT_MAP = {
+  'HR': 'Office', 'Accountant': 'Office', 'IT': 'Office',
+  'Warehouse Admin': 'Warehouse', 'Forklift': 'Warehouse', 'Pick & Packer': 'Warehouse', 'Pure Packer': 'Warehouse',
+  'Team Leader': 'Manufacturing', 'Supervisor': 'Manufacturing',
+  'Production Manager': 'Manufacturing', 'Head of Operations': 'Manufacturing', 'Production Worker': 'Manufacturing',
+};
+
 router.get('/roles', (req, res) => {
   const roles = db.prepare('SELECT * FROM job_roles ORDER BY name ASC').all();
   const allCourses = db.prepare('SELECT * FROM courses ORDER BY created_at ASC').all();
   const enriched = roles.map(r => ({
     ...r,
+    // Guarantee department is always set: DB value → name-based lookup → null
+    department: r.department || ROLE_DEPT_MAP[r.name] || null,
     userCount: db.prepare('SELECT COUNT(*) as c FROM users WHERE job_role_id = ?').get(r.id).c,
     courses: db.prepare(`
       SELECT c.id, c.title, c.color, c.icon FROM courses c

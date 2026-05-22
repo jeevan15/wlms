@@ -7,15 +7,16 @@ const { JWT_SECRET } = require('../middleware/auth');
 const router = express.Router();
 
 router.post('/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
+  const { email, password } = req.body; // 'email' field accepts email address or employee ID
+  if (!email || !password)
+    return res.status(400).json({ error: 'Email / Employee ID and password are required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
+  // Match by email address or employee ID (e.g. EMP001)
+  const user = db.prepare(
+    'SELECT * FROM users WHERE email = ? OR employee_code = ?'
+  ).get(email, email);
+  if (!user || !bcrypt.compareSync(password, user.password))
+    return res.status(401).json({ error: 'Invalid email / Employee ID or password' });
 
   const token = jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -25,32 +26,20 @@ router.post('/login', (req, res) => {
 
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, department: user.department }
+    user: {
+      id: user.id, name: user.name, email: user.email,
+      role: user.role, department: user.department,
+      employee_type: user.employee_type,
+      onboarding_completed: user.onboarding_completed ?? 1
+    }
   });
 });
 
-router.post('/register', (req, res) => {
-  const { name, email, password, department } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Name, email, and password are required' });
-  }
-
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (existing) return res.status(409).json({ error: 'Email already registered' });
-
-  const hash = bcrypt.hashSync(password, 10);
-  const result = db.prepare(
-    'INSERT INTO users (name, email, password, department) VALUES (?, ?, ?, ?)'
-  ).run(name, email, hash, department || null);
-
-  const user = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(result.lastInsertRowid);
-  const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-
-  res.status(201).json({ token, user });
+// Self-registration is disabled — accounts are created by admins only
+router.post('/register', (_req, res) => {
+  res.status(403).json({
+    error: 'Self-registration is disabled. Please contact an administrator to create your account.'
+  });
 });
 
 module.exports = router;

@@ -20,6 +20,8 @@ import AdminRolesPage from './pages/admin/AdminRolesPage';
 import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminTasksPage from './pages/admin/AdminTasksPage';
 import AdminCompliancePage from './pages/admin/AdminCompliancePage';
+import OnboardingPage from './pages/OnboardingPage';
+import BankDetailsPage from './pages/BankDetailsPage';
 
 export default function App() {
   return (
@@ -27,6 +29,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
 
           {/* User routes */}
           <Route path="/"        element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
@@ -41,6 +44,7 @@ export default function App() {
           <Route path="/sops"    element={<ProtectedRoute><SOPsPage /></ProtectedRoute>} />
           <Route path="/sops/:id" element={<ProtectedRoute><SOPDetailPage /></ProtectedRoute>} />
           <Route path="/training-matrix" element={<ProtectedRoute><TrainingMatrixPage /></ProtectedRoute>} />
+          <Route path="/bank-details"    element={<ProtectedRoute><BankDetailsPage /></ProtectedRoute>} />
 
           {/* Admin routes */}
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminLayout /></ProtectedRoute>}>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -7,11 +7,12 @@ import Quiz from '../components/Quiz';
 export default function LessonPage() {
   const { courseId, lessonId } = useParams();
   const navigate = useNavigate();
-  const [lesson, setLesson] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [lesson, setLesson]       = useState(null);
+  const [loading, setLoading]     = useState(true);
   const [completing, setCompleting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [quizPassed, setQuizPassed] = useState(false);
+  const startTimeRef = useRef(Date.now());
 
   const fetchLesson = () => {
     setLoading(true);
@@ -25,12 +26,19 @@ export default function LessonPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchLesson(); }, [courseId, lessonId]);
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    fetchLesson();
+  }, [courseId, lessonId]);
+
+  const getElapsedSeconds = () => Math.round((Date.now() - startTimeRef.current) / 1000);
 
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      await axios.post(`/api/courses/${courseId}/lessons/${lessonId}/complete`);
+      await axios.post(`/api/courses/${courseId}/lessons/${lessonId}/complete`, {
+        time_spent_seconds: getElapsedSeconds(),
+      });
       setCompleted(true);
     } finally {
       setCompleting(false);
@@ -173,6 +181,7 @@ export default function LessonPage() {
               courseId={courseId}
               lessonId={lessonId}
               onPass={handleQuizPass}
+              lessonStartTime={startTimeRef.current}
             />
           </div>
         )}

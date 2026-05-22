@@ -98,7 +98,7 @@ router.post('/', authenticateToken, (req, res) => {
               `A new ${severity} severity incident has been reported by ${req.user.name || 'a user'}.`);
     });
 
-    res.json({ id: result.lastInsertRowid, message: 'Incident reported' });
+    res.status(201).json({ id: result.lastInsertRowid, message: 'Incident reported' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -107,11 +107,24 @@ router.post('/', authenticateToken, (req, res) => {
 // PUT /api/incidents/:id  (admin — update status / follow-up)
 router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
   try {
-    const {
-      status, action_taken, follow_up_required, follow_up_notes,
-      type, title, description, location, severity,
-      injured_party, first_aid_given, first_aider, occurred_at
-    } = req.body;
+    // Load existing record so partial updates don't wipe required fields
+    const existing = db.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const b = req.body;
+    const type             = b.type             !== undefined ? b.type             : existing.type;
+    const title            = b.title            !== undefined ? b.title            : existing.title;
+    const description      = b.description      !== undefined ? b.description      : existing.description;
+    const location         = b.location         !== undefined ? b.location         : existing.location;
+    const severity         = b.severity         !== undefined ? b.severity         : existing.severity;
+    const injured_party    = b.injured_party    !== undefined ? b.injured_party    : existing.injured_party;
+    const first_aid_given  = b.first_aid_given  !== undefined ? (b.first_aid_given ? 1 : 0) : existing.first_aid_given;
+    const first_aider      = b.first_aider      !== undefined ? b.first_aider      : existing.first_aider;
+    const action_taken     = b.action_taken     !== undefined ? b.action_taken     : existing.action_taken;
+    const follow_up_required = b.follow_up_required !== undefined ? (b.follow_up_required ? 1 : 0) : existing.follow_up_required;
+    const follow_up_notes  = b.follow_up_notes  !== undefined ? b.follow_up_notes  : existing.follow_up_notes;
+    const occurred_at      = b.occurred_at      !== undefined ? b.occurred_at      : existing.occurred_at;
+    const status           = b.status           !== undefined ? b.status           : existing.status;
 
     db.prepare(`
       UPDATE incidents SET
@@ -122,10 +135,10 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
         closed_at = CASE WHEN ? = 'closed' THEN CURRENT_TIMESTAMP ELSE closed_at END
       WHERE id=?
     `).run(
-      type, title, description || null, location || null, severity,
-      injured_party || null, first_aid_given ? 1 : 0, first_aider || null,
-      action_taken || null, follow_up_required ? 1 : 0, follow_up_notes || null,
-      occurred_at || null, status, status, req.params.id
+      type, title, description, location, severity,
+      injured_party, first_aid_given, first_aider,
+      action_taken, follow_up_required, follow_up_notes,
+      occurred_at, status, status, req.params.id
     );
 
     res.json({ message: 'Updated' });

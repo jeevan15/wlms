@@ -223,5 +223,27 @@ db.exec(`
 
 // ── Migrations for existing databases ─────────────────────────────────────────
 try { db.exec('ALTER TABLE users ADD COLUMN job_role_id INTEGER REFERENCES job_roles(id) ON DELETE SET NULL'); } catch (_) {}
+try { db.exec('ALTER TABLE quiz_questions ADD COLUMN image_url TEXT'); } catch (_) {}
+
+// ── Migrations v3 — title & onboarding gate ───────────────────────────────────
+try { db.exec('ALTER TABLE users ADD COLUMN title TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 1'); } catch (_) {}
+
+// ── Migrations v2 — onboarding fields & time tracking ─────────────────────────
+try { db.exec('ALTER TABLE users ADD COLUMN given_name TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN last_name TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN employee_code TEXT'); } catch (_) {}
+try { db.exec("ALTER TABLE users ADD COLUMN employee_type TEXT DEFAULT 'existing'"); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN tfn TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN bank_details TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN superannuation_details TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN employment_contract TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE user_progress ADD COLUMN time_spent_seconds INTEGER DEFAULT 0'); } catch (_) {}
+try { db.exec('ALTER TABLE job_roles ADD COLUMN department TEXT'); } catch (_) {}
+
+// ── Backfill department on job_roles for known role names ─────────────────────
+try { db.exec("UPDATE job_roles SET department='Office' WHERE name IN ('HR','Accountant','IT','Full Access','Admin Access') AND (department IS NULL OR department='')"); } catch (_) {}
+try { db.exec("UPDATE job_roles SET department='Warehouse' WHERE name IN ('Warehouse Admin','Forklift','Pick & Packer','Pure Packer') AND (department IS NULL OR department='')"); } catch (_) {}
+try { db.exec("UPDATE job_roles SET department='Manufacturing' WHERE name IN ('Team Leader','Supervisor','Production Manager','Head of Operations','Production Worker') AND (department IS NULL OR department='')"); } catch (_) {}
 
 module.exports = db;

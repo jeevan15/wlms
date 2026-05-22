@@ -4,12 +4,15 @@ import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
 
 const USER_NAV = [
-  { to: '/',           label: 'My Training',  icon: '📚', exact: true },
-  { to: '/compliance', label: 'Compliance',   icon: '✅' },
-  { to: '/tasks',      label: 'My Tasks',     icon: '📋' },
-  { to: '/incidents',  label: 'Incidents',    icon: '⚠️' },
-  { to: '/sops',       label: 'SOPs',         icon: '📄' },
+  { to: '/',              label: 'Training',    icon: '📚', exact: true },
+  { to: '/compliance',   label: 'Compliance',  icon: '✅' },
+  { to: '/tasks',        label: 'My Tasks',    icon: '📋' },
+  { to: '/incidents',    label: 'Incidents',   icon: '⚠️' },
+  { to: '/sops',         label: 'SOPs',        icon: '📄' },
 ];
+
+// Extra link shown only to non-admin users
+const BANK_NAV = { to: '/bank-details', label: 'Bank Details', icon: '🏦' };
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -31,7 +34,7 @@ export default function Navbar() {
             <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center text-lg">🏭</div>
             <div className="hidden sm:block">
               <span className="font-bold text-white text-sm leading-none block">Warehouse</span>
-              <span className="text-primary-400 text-xs font-medium">Compliance & Training</span>
+              <span className="text-primary-400 text-xs font-medium">Training & Compliance</span>
             </div>
           </Link>
 
@@ -51,6 +54,19 @@ export default function Navbar() {
                 {label}
               </Link>
             ))}
+            {user?.role !== 'admin' && (
+              <Link
+                to={BANK_NAV.to}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  isActive(BANK_NAV.to, false)
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-surface-700'
+                }`}
+              >
+                <span className="text-base">{BANK_NAV.icon}</span>
+                {BANK_NAV.label}
+              </Link>
+            )}
             {user?.role === 'admin' && (
               <Link
                 to="/admin"
@@ -105,6 +121,19 @@ export default function Navbar() {
                 <span>{icon}</span>{label}
               </Link>
             ))}
+            {user?.role !== 'admin' && (
+              <Link
+                to={BANK_NAV.to}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive(BANK_NAV.to, false)
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-surface-700'
+                }`}
+              >
+                <span>{BANK_NAV.icon}</span>{BANK_NAV.label}
+              </Link>
+            )}
             {user?.role === 'admin' && (
               <Link to="/admin" onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-amber-400 hover:text-white hover:bg-surface-700">
