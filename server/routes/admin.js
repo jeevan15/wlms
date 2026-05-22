@@ -6,6 +6,31 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 router.use(authenticateToken, requireAdmin);
 
+// ─── Validation helpers ───────────────────────────────────────────────────────
+
+function validateEmail(email) {
+  if (!email || typeof email !== 'string') return 'Email is required';
+  const trimmed = email.trim();
+  if (trimmed.length > 254) return 'Email address is too long';
+  // RFC-5321 compliant basic check
+  const re = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+  if (!re.test(trimmed)) return 'Please enter a valid email address (e.g. jane@warehouse.com)';
+  if (/\.\./.test(trimmed)) return 'Email address contains consecutive dots';
+  return null; // valid
+}
+
+function validatePassword(password) {
+  if (!password || typeof password !== 'string') return 'Password is required';
+  const errors = [];
+  if (password.length < 8)              errors.push('at least 8 characters');
+  if (!/[A-Z]/.test(password))          errors.push('one uppercase letter (A–Z)');
+  if (!/[a-z]/.test(password))          errors.push('one lowercase letter (a–z)');
+  if (!/[0-9]/.test(password))          errors.push('one number (0–9)');
+  if (!/[^A-Za-z0-9]/.test(password))  errors.push('one special character (!@#$ etc.)');
+  if (errors.length === 0) return null;
+  return `Password must contain: ${errors.join(', ')}`;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getAssignedCourses(jobRoleId) {
@@ -215,10 +240,18 @@ router.post('/users', (req, res) => {
   } = req.body;
 
   const name = [given_name, last_name].filter(Boolean).join(' ').trim() || req.body.name || '';
-  if (!name || !email || !password)
-    return res.status(400).json({ error: 'Given name, last name, email and password are required' });
+  if (!name)
+    return res.status(400).json({ error: 'Given name and last name are required' });
 
-  if (db.prepare('SELECT id FROM users WHERE email = ?').get(email))
+  const emailErr = validateEmail(email);
+  if (emailErr) return res.status(400).json({ error: emailErr });
+
+  if (!password)
+    return res.status(400).json({ error: 'Password is required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
+
+  if (db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim()))
     return res.status(409).json({ error: 'Email already in use' });
 
   if (employee_code && db.prepare('SELECT id FROM users WHERE employee_code = ?').get(employee_code))
@@ -263,13 +296,20 @@ router.put('/users/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  if (db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, userId))
+  const emailErr2 = validateEmail(email);
+  if (emailErr2) return res.status(400).json({ error: emailErr2 });
+
+  if (db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email.trim(), userId))
     return res.status(409).json({ error: 'Email already in use' });
 
   if (employee_code && db.prepare('SELECT id FROM users WHERE employee_code = ? AND id != ?').get(employee_code, userId))
     return res.status(409).json({ error: 'Employee ID already in use' });
 
   const name = [given_name, last_name].filter(Boolean).join(' ').trim() || req.body.name || existing.name;
+  if (password && password.trim()) {
+    const pwErr2 = validatePassword(password);
+    if (pwErr2) return res.status(400).json({ error: pwErr2 });
+  }
   const hash = (password && password.trim()) ? bcrypt.hashSync(password, 10) : existing.password;
   const roleChanged = existing.job_role_id !== (job_role_id || null);
 

@@ -87,30 +87,112 @@ function FieldRow({ label, required, hint, children }) {
   );
 }
 
-function PasswordField({ value, onChange, required, placeholder }) {
-  const [show, setShow] = useState(false);
+// ── Password policy helpers ───────────────────────────────────────────────────
+
+const PW_RULES = [
+  { key: 'len',     label: 'At least 8 characters',          test: v => v.length >= 8 },
+  { key: 'upper',   label: 'One uppercase letter (A–Z)',      test: v => /[A-Z]/.test(v) },
+  { key: 'lower',   label: 'One lowercase letter (a–z)',      test: v => /[a-z]/.test(v) },
+  { key: 'digit',   label: 'One number (0–9)',                test: v => /[0-9]/.test(v) },
+  { key: 'special', label: 'One special character (!@#$ …)',  test: v => /[^A-Za-z0-9]/.test(v) },
+];
+
+function getPwStrength(value) {
+  if (!value) return { score: 0, label: '', color: '' };
+  const met = PW_RULES.filter(r => r.test(value)).length;
+  if (met <= 1) return { score: 1, label: 'Weak',       color: 'bg-red-500' };
+  if (met === 2) return { score: 2, label: 'Fair',       color: 'bg-orange-500' };
+  if (met === 3) return { score: 3, label: 'Good',       color: 'bg-yellow-400' };
+  if (met === 4) return { score: 4, label: 'Strong',     color: 'bg-emerald-400' };
+  return              { score: 5, label: 'Very Strong', color: 'bg-green-400' };
+}
+
+function PasswordField({ value, onChange, required, placeholder, showPolicy }) {
+  const [show,    setShow]    = useState(false);
+  const [focused, setFocused] = useState(false);
+
+  const strength  = getPwStrength(value);
+  const showMeter = showPolicy && (focused || value.length > 0);
+
   return (
-    <div className="relative">
-      <input
-        type={show ? 'text' : 'password'}
-        className="input pr-10"
-        value={value}
-        onChange={onChange}
-        required={required}
-        minLength={required ? 6 : 0}
-        placeholder={placeholder}
-        autoComplete="new-password"
-      />
-      <button
-        type="button"
-        onClick={() => setShow(v => !v)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-sm select-none"
-        tabIndex={-1}
-      >
-        {show ? '🙈' : '👁️'}
-      </button>
+    <div className="space-y-2">
+      <div className="relative">
+        <input
+          type={show ? 'text' : 'password'}
+          className="input pr-10"
+          value={value}
+          onChange={onChange}
+          required={required}
+          placeholder={placeholder}
+          autoComplete="new-password"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(v => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-sm select-none"
+          tabIndex={-1}
+        >
+          {show ? '🙈' : '👁️'}
+        </button>
+      </div>
+
+      {/* Strength bar */}
+      {showMeter && (
+        <>
+          <div className="flex gap-1 h-1.5">
+            {[1,2,3,4,5].map(i => (
+              <div key={i}
+                   className={`flex-1 rounded-full transition-colors duration-200 ${
+                     i <= strength.score ? strength.color : 'bg-surface-600'
+                   }`} />
+            ))}
+          </div>
+          <p className={`text-xs font-medium ${
+            strength.score <= 1 ? 'text-red-400' :
+            strength.score === 2 ? 'text-orange-400' :
+            strength.score === 3 ? 'text-yellow-400' :
+            'text-emerald-400'
+          }`}>
+            {strength.label && `Strength: ${strength.label}`}
+          </p>
+
+          {/* Requirements checklist */}
+          <ul className="space-y-1 mt-1">
+            {PW_RULES.map(rule => {
+              const met = rule.test(value);
+              return (
+                <li key={rule.key} className={`flex items-center gap-2 text-xs transition-colors ${
+                  met ? 'text-emerald-400' : 'text-gray-500'
+                }`}>
+                  <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
+                    met ? 'bg-emerald-500/30 text-emerald-400' : 'bg-surface-600 text-gray-600'
+                  }`}>
+                    {met ? '✓' : '·'}
+                  </span>
+                  {rule.label}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
+}
+
+// ── Email validation helper ───────────────────────────────────────────────────
+
+function validateEmailFmt(email) {
+  if (!email) return 'Email is required';
+  if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email.trim()))
+    return 'Enter a valid email address (e.g. jane@warehouse.com)';
+  return '';
+}
+
+function isPwValid(value) {
+  return PW_RULES.every(r => r.test(value));
 }
 
 function fmtTime(seconds) {
@@ -137,6 +219,7 @@ export default function AdminUsersPage() {
   const [form,          setForm]          = useState(BLANK_FORM);
   const [saving,        setSaving]        = useState(false);
   const [error,         setError]         = useState('');
+  const [fieldErrors,   setFieldErrors]   = useState({ email: '', password: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [expandedUser,  setExpandedUser]  = useState(null);
 
@@ -177,6 +260,7 @@ export default function AdminUsersPage() {
   const openCreate = () => {
     setForm({ ...BLANK_FORM });
     setError('');
+    setFieldErrors({ email: '', password: '' });
     setModal({ mode: 'create' });
   };
 
@@ -195,11 +279,23 @@ export default function AdminUsersPage() {
       employment_contract: user.employment_contract || '',
     });
     setError('');
+    setFieldErrors({ email: '', password: '' });
     setModal({ mode: 'edit', user });
   };
 
   const handleSave = async e => {
     e.preventDefault();
+
+    // ── Client-side validation ──────────────────────────────────────────────
+    const emailErr = validateEmailFmt(form.email);
+    const needPw   = modal.mode === 'create' || form.password.trim().length > 0;
+    const pwErr    = needPw && !isPwValid(form.password)
+      ? 'Password does not meet all requirements'
+      : '';
+
+    setFieldErrors({ email: emailErr, password: pwErr });
+    if (emailErr || pwErr) return;
+
     setSaving(true);
     setError('');
     try {
@@ -447,9 +543,25 @@ export default function AdminUsersPage() {
                        placeholder="EMP001" />
               </FieldRow>
               <FieldRow label="Email Address" required>
-                <input type="email" className="input" value={form.email}
-                       onChange={e => setField('email', e.target.value)} required
-                       placeholder="jane@warehouse.com" />
+                <input
+                  type="text"
+                  className={`input ${fieldErrors.email ? 'border-red-500 focus:border-red-400' : ''}`}
+                  value={form.email}
+                  onChange={e => {
+                    setField('email', e.target.value);
+                    if (fieldErrors.email)
+                      setFieldErrors(fe => ({ ...fe, email: validateEmailFmt(e.target.value) }));
+                  }}
+                  onBlur={e => setFieldErrors(fe => ({ ...fe, email: validateEmailFmt(e.target.value) }))}
+                  required
+                  placeholder="jane@warehouse.com"
+                  autoComplete="off"
+                />
+                {fieldErrors.email && (
+                  <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                    <span>⚠</span>{fieldErrors.email}
+                  </p>
+                )}
               </FieldRow>
             </div>
 
@@ -461,10 +573,20 @@ export default function AdminUsersPage() {
             >
               <PasswordField
                 value={form.password}
-                onChange={e => setField('password', e.target.value)}
+                onChange={e => {
+                  setField('password', e.target.value);
+                  if (fieldErrors.password)
+                    setFieldErrors(fe => ({ ...fe, password: '' }));
+                }}
                 required={modal.mode === 'create'}
-                placeholder={modal.mode === 'edit' ? '••••••••' : 'Min. 6 characters'}
+                placeholder={modal.mode === 'edit' ? 'New password (optional)' : 'Create a strong password'}
+                showPolicy={modal.mode === 'create' || form.password.length > 0}
               />
+              {fieldErrors.password && (
+                <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                  <span>⚠</span>{fieldErrors.password}
+                </p>
+              )}
             </FieldRow>
 
             {/* Department + Role row */}
